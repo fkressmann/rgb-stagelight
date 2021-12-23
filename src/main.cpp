@@ -34,6 +34,10 @@ uint8_t Gtemp = 0;
 uint8_t Btemp = 0;
 uint8_t driverTemp = 0;
 
+uint16_t fanCounter1 = 0;
+uint16_t fanCounter2 = 0;
+ulong fanTimer = 0;
+
 AsyncWebServer webServer(80);
 DNSServer dnsServer;
 
@@ -123,6 +127,14 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* d
   }
 }
 
+void IRAM_ATTR isrFan1() {
+  fanCounter1 += 1;
+}
+
+void IRAM_ATTR isrFan2() {
+  fanCounter2 += 1;
+}
+
 void setup()
 {
   // put your setup code here, to run once:
@@ -142,6 +154,12 @@ void setup()
 
   ledcSetup(PWM_CHANNEL_FAN_OUT, 1000, 8);
   ledcAttachPin(GPIO_FAN_OUT, PWM_CHANNEL_FAN_OUT);
+
+  pinMode(GPIO_FAN_1_IN, INPUT_PULLUP);
+  attachInterrupt(GPIO_FAN_1_IN, isrFan1, FALLING);
+
+  pinMode(GPIO_FAN_2_IN, INPUT_PULLUP);
+  attachInterrupt(GPIO_FAN_2_IN, isrFan2, FALLING);
 
   setupDisplay();
 
@@ -213,6 +231,19 @@ void handleTemp() {
   uint8_t tB = tempRead(GPIO_TEMP_B);
   uint8_t tD = tempRead(GPIO_TEMP_BOX);
   displayTemp(tR, tG, tB, tD);
+  ledcWrite(PWM_CHANNEL_FAN_OUT, 255 - tD);
+}
+
+void handleFanSpeed() {
+  ulong timeframe = millis() - fanTimer;
+  if (timeframe > 1000) {
+    uint16_t fanSpeed1 = ((double) fanCounter1 / timeframe) * 30000;
+    uint16_t fanSpeed2 = ((double) fanCounter2 / timeframe) * 30000;
+    displayFanSpeed(fanSpeed1, fanSpeed2);
+    fanCounter1 = 0;
+    fanCounter2 = 0;
+    fanTimer = millis();
+  }
 }
 
 void loop()
@@ -220,6 +251,7 @@ void loop()
   ArduinoOTA.handle();
   // put your main code here, to run repeatedly:
   handleTemp();
+  handleFanSpeed();
   updateDisplay();
   artnet.read();
 }

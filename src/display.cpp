@@ -81,7 +81,7 @@ void displayRGBIntensity(int r, int g, int b) {
     displayChanged = true;
 }
 void displayTemp(int r, int g, int b, int driver) {
-    sprintf(tempRGB,"Temp R%3d G%3d B%3d", r, g, b);
+    sprintf(tempRGB,"Temp R%2d G%2d B%2d", r, g, b);
     sprintf(tempDriver,"Temp Driver %d", driver);
     displayChanged = true;
 }
