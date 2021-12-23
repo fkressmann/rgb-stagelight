@@ -1,8 +1,9 @@
 #include <Arduino.h>
-#include "ota.h"
-#include "display.h"
 #include <ESPAsyncWebServer.h>
 #include <ESPAsync_WiFiManager.h>
+#include <ArtnetWifi.h>
+#include "ota.h"
+#include "display.h"
 
 #define GPIO_LED_R 12
 #define PWM_CHANNEL_R 0
@@ -24,12 +25,23 @@
 #define GPIO_SCL 22
 #define GPIO_SDA 21
 
-int Rval = 0;
-int Gval = 0;
-int Bval = 0;
+uint8_t Rval = 0;
+uint8_t Gval = 0;
+uint8_t Bval = 0;
 
 AsyncWebServer webServer(80);
 DNSServer dnsServer;
+
+ArtnetWifi artnet;
+const int startUniverse = 0; // CHANGE FOR YOUR SETUP most software this is 1, some software send out artnet first universe as 0.
+
+// Check if we got all universes
+const int maxUniverses = 1;
+bool universesReceived[maxUniverses];
+bool sendFrame = 1;
+int previousDataLength = 0;
+
+
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head>
   <title>G-Spot Control</title>
@@ -72,23 +84,38 @@ String processor(const String &var)
   return String();
 }
 
-unsigned int hexStrToInt(const char str[])
+uint8_t hexStrToInt(const char str[])
 {
-  return (unsigned int)strtol(str, 0, 16);
+  return (uint8_t) strtol(str, 0, 16);
 }
 
-void colorDecoder(String colorString)
-{
-  Rval = hexStrToInt(colorString.substring(1, 3).c_str());
-  Gval = hexStrToInt(colorString.substring(3, 5).c_str());
-  Bval = hexStrToInt(colorString.substring(5).c_str());
+void writeToPwm(uint8_t r, uint8_t g, uint8_t b) {
+  if (Rval == r && Gval == g && Bval == b) {
+    return;
+  }
+    Rval = r;
+    Bval = b;
+    Gval = g;
+    ledcWrite(PWM_CHANNEL_R, Rval);
+    ledcWrite(PWM_CHANNEL_G, Gval);
+    ledcWrite(PWM_CHANNEL_B, Bval);
+    displayRGBIntensity(Rval, Gval, Bval);
 }
 
-void writeToPwm()
-{
-  ledcWrite(PWM_CHANNEL_R, Rval);
-  ledcWrite(PWM_CHANNEL_G, Gval);
-  ledcWrite(PWM_CHANNEL_B, Bval);
+void decodeAndUpdateColor(String colorString) {
+  writeToPwm(
+  hexStrToInt(colorString.substring(1, 3).c_str()),
+  hexStrToInt(colorString.substring(3, 5).c_str()),
+  hexStrToInt(colorString.substring(5).c_str())
+  );
+}
+
+void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
+  if (universe == 0) {
+    if (length > 2) {
+      writeToPwm(data[0], data[1], data[2]);
+    }
+  }
 }
 
 void setup()
@@ -130,6 +157,9 @@ void setup()
 
   setupOta();
 
+  artnet.begin();
+  artnet.setArtDmxCallback(onDmxFrame);
+
   // Send web page to client
   webServer.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
                { request->send_P(200, "text/html", index_html, processor); });
@@ -141,14 +171,7 @@ void setup()
     if (request->hasParam("color", true)) {
       Serial.println("Found color in request:");
       String value = request->getParam("color", true)->value();
-      Serial.println("extract to var worked");
-      Serial.println(value);
-      colorDecoder(value);
-      Serial.println("Saved values");
-      Serial.println(Rval);
-      Serial.println(Gval);
-      Serial.println(Bval);
-      writeToPwm();
+      decodeAndUpdateColor(value);
     }
     request->send(200); });
 
@@ -172,4 +195,5 @@ void loop()
   ArduinoOTA.handle();
   // put your main code here, to run repeatedly:
   updateDisplay();
+  artnet.read();
 }
