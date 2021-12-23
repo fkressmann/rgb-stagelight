@@ -81,12 +81,12 @@ void displayRGBIntensity(int r, int g, int b) {
     displayChanged = true;
 }
 void displayTemp(int r, int g, int b, int driver) {
-    sprintf(tempRGB,"Temp R%2d G%2d B%2d", r, g, b);
-    sprintf(tempDriver,"Temp Driver %u", driver);
+    sprintf(tempRGB,"Temp R%3d G%3d B%3d", r, g, b);
+    sprintf(tempDriver,"Temp Driver %d", driver);
     displayChanged = true;
 }
 void displayFanSpeed(int fan1, int fan2) {
-    sprintf(fanSpeed,"Fan %2drpm %2drpm", fan1, fan2);
+    sprintf(fanSpeed,"Fan %4drpm %4drpm", fan1, fan2);
     displayChanged = true;
 }
 void displayInfo(String in) {

@@ -29,6 +29,11 @@ uint8_t Rval = 0;
 uint8_t Gval = 0;
 uint8_t Bval = 0;
 
+uint8_t Rtemp = 0;
+uint8_t Gtemp = 0;
+uint8_t Btemp = 0;
+uint8_t driverTemp = 0;
+
 AsyncWebServer webServer(80);
 DNSServer dnsServer;
 
@@ -190,10 +195,31 @@ void setup()
   webServer.begin();
 }
 
+uint8_t tempRead(uint8_t pin) {
+  uint16_t adc = 0;
+  for (int i = 0; i < 10; i++) {
+    adc += analogRead(pin);
+  }
+  adc /= 10;
+  double voltage = ((3.3/4096)*adc) + 0.155;
+  double resistance = ((3.3 - voltage) * 10000) / voltage;
+  uint8_t temp = (1 / ((log(resistance / 10000) / 3977) + (1 / (25 + 273.15)))) - 273.15;
+  return temp;
+}
+
+void handleTemp() {
+  uint8_t tR = tempRead(GPIO_TEMP_R);
+  uint8_t tG = tempRead(GPIO_TEMP_G);
+  uint8_t tB = tempRead(GPIO_TEMP_B);
+  uint8_t tD = tempRead(GPIO_TEMP_BOX);
+  displayTemp(tR, tG, tB, tD);
+}
+
 void loop()
 {
   ArduinoOTA.handle();
   // put your main code here, to run repeatedly:
+  handleTemp();
   updateDisplay();
   artnet.read();
 }
