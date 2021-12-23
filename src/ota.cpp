@@ -1,37 +1,49 @@
 #include "ota.h"
 
-void setupOta(){
+void setupOta()
+{
   ArduinoOTA.setHostname("g-spot-1");
   ArduinoOTA.onStart([]() {
     String type;
     if (ArduinoOTA.getCommand() == U_FLASH) {
-      type = "sketch";
+      type = "(sketch)";
     } else { // U_FS
-      type = "filesystem";
+      type = "(fs)";
     }
-
     // NOTE: if updating FS this would be the place to unmount FS using FS.end()
     Serial.println("Start updating " + type);
-  });
+    displayInfo("Starting OTA " + type);
+    updateDisplay(); 
+    });
+
   ArduinoOTA.onEnd([]() {
     Serial.println("\nEnd");
-  });
+    displayInfo("Finished OTA"); 
+    updateDisplay();
+    });
+
   ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
-  });
+    char msg[21];
+    sprintf(msg, "Progress: %u%%\r", (progress / (total / 100)));
+    displayInfo2(msg); 
+    updateDisplay();
+    });
+
   ArduinoOTA.onError([](ota_error_t error) {
-    Serial.printf("Error[%u]: ", error);
+    char *msg;
     if (error == OTA_AUTH_ERROR) {
-      Serial.println("Auth Failed");
+      msg = (char*)"Auth Failed";
     } else if (error == OTA_BEGIN_ERROR) {
-      Serial.println("Begin Failed");
+      msg = (char*)"Begin Failed";
     } else if (error == OTA_CONNECT_ERROR) {
-      Serial.println("Connect Failed");
+      msg = (char*)"Connect Failed";
     } else if (error == OTA_RECEIVE_ERROR) {
-      Serial.println("Receive Failed");
+      msg = (char*)"Receive Failed";
     } else if (error == OTA_END_ERROR) {
-      Serial.println("End Failed");
-    }
-  });
+      msg = (char*)"End Failed";
+    } 
+    displayInfo(msg);
+    updateDisplay();
+    });
   ArduinoOTA.begin();
 }
