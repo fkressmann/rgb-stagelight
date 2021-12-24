@@ -29,6 +29,12 @@ uint8_t Rval = 0;
 uint8_t Gval = 0;
 uint8_t Bval = 0;
 
+uint8_t RvalActual = 0;
+uint8_t GvalActual = 0;
+uint8_t BvalActual = 0;
+
+float tempFactor = 1;
+
 uint8_t Rtemp = 0;
 uint8_t Gtemp = 0;
 uint8_t Btemp = 0;
@@ -49,7 +55,6 @@ const int maxUniverses = 1;
 bool universesReceived[maxUniverses];
 bool sendFrame = 1;
 int previousDataLength = 0;
-
 
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head>
@@ -95,43 +100,66 @@ String processor(const String &var)
 
 uint8_t hexStrToInt(const char str[])
 {
-  return (uint8_t) strtol(str, 0, 16);
+  return (uint8_t)strtol(str, 0, 16);
 }
 
-void writeToPwm(uint8_t r, uint8_t g, uint8_t b) {
-  if (Rval == r && Gval == g && Bval == b) {
+void writeToPwm(uint8_t r, uint8_t g, uint8_t b)
+{
+  // if (Rval == r && Gval == g && Bval == b) {
+  //   return;
+  // }
+  Rval = tempFactor * r;
+  Bval = tempFactor * g;
+  Gval = tempFactor * b;
+  ledcWrite(PWM_CHANNEL_R, Rval);
+  ledcWrite(PWM_CHANNEL_G, Gval);
+  ledcWrite(PWM_CHANNEL_B, Bval);
+  displayRGBIntensity(Rval, Gval, Bval);
+}
+
+void writeToPwm()
+{
+  if (tempFactor == 1 && Rval == RvalActual && Gval == GvalActual && Bval == BvalActual)
+  {
     return;
   }
-    Rval = r;
-    Bval = b;
-    Gval = g;
-    ledcWrite(PWM_CHANNEL_R, Rval);
-    ledcWrite(PWM_CHANNEL_G, Gval);
-    ledcWrite(PWM_CHANNEL_B, Bval);
-    displayRGBIntensity(Rval, Gval, Bval);
+  RvalActual = tempFactor * Rval;
+  GvalActual = tempFactor * Gval;
+  BvalActual = tempFactor * Bval;
+  Serial.println(tempFactor);
+  ledcWrite(PWM_CHANNEL_R, RvalActual);
+  ledcWrite(PWM_CHANNEL_G, GvalActual);
+  ledcWrite(PWM_CHANNEL_B, BvalActual);
+  displayRGBIntensity(RvalActual, GvalActual, BvalActual);
 }
 
-void decodeAndUpdateColor(String colorString) {
-  writeToPwm(
-  hexStrToInt(colorString.substring(1, 3).c_str()),
-  hexStrToInt(colorString.substring(3, 5).c_str()),
-  hexStrToInt(colorString.substring(5).c_str())
-  );
+void decodeAndUpdateColor(String colorString)
+{
+  Rval = hexStrToInt(colorString.substring(1, 3).c_str());
+  Gval = hexStrToInt(colorString.substring(3, 5).c_str());
+  Bval = hexStrToInt(colorString.substring(5).c_str());
 }
 
-void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data) {
-  if (universe == 0) {
-    if (length > 2) {
-      writeToPwm(data[0], data[1], data[2]);
+void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t *data)
+{
+  if (universe == 0)
+  {
+    if (length > 2)
+    {
+      Rval = data[0];
+      Gval = data[1];
+      Bval = data[2];
     }
   }
 }
 
-void IRAM_ATTR isrFan1() {
+void IRAM_ATTR isrFan1()
+{
   fanCounter1 += 1;
 }
 
-void IRAM_ATTR isrFan2() {
+void IRAM_ATTR isrFan2()
+{
   fanCounter2 += 1;
 }
 
@@ -213,32 +241,70 @@ void setup()
   webServer.begin();
 }
 
-uint8_t tempRead(uint8_t pin) {
+uint8_t tempRead(uint8_t pin)
+{
   uint16_t adc = 0;
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < 10; i++)
+  {
     adc += analogRead(pin);
   }
   adc /= 10;
-  double voltage = ((3.3/4096)*adc) + 0.155;
+  double voltage = ((3.3 / 4096) * adc) + 0.155;
   double resistance = ((3.3 - voltage) * 10000) / voltage;
-  uint8_t temp = (1 / ((log(resistance / 10000) / 3977) + (1 / (25 + 273.15)))) - 273.15;
+  uint8_t temp = round((1 / ((log(resistance / 10000) / 3977) + (1 / (25 + 273.15)))) - 273.15);
   return temp;
 }
 
-void handleTemp() {
-  uint8_t tR = tempRead(GPIO_TEMP_R);
-  uint8_t tG = tempRead(GPIO_TEMP_G);
-  uint8_t tB = tempRead(GPIO_TEMP_B);
-  uint8_t tD = tempRead(GPIO_TEMP_BOX);
-  displayTemp(tR, tG, tB, tD);
-  ledcWrite(PWM_CHANNEL_FAN_OUT, 255 - tD);
+void setFanSpeed(uint8_t percent)
+{
+  percent = min((uint8_t)100, percent);
+  percent = max((uint8_t)0, percent);
+  ledcWrite(PWM_CHANNEL_FAN_OUT, 255 - (percent * 2.55));
 }
 
-void handleFanSpeed() {
+void tempToFanSpeed(uint8_t maxTemp)
+{
+  if (maxTemp > 30)
+  {
+    setFanSpeed((maxTemp - 30) * 5);
+  }
+  else
+  {
+    setFanSpeed(0);
+  }
+}
+
+void tempToTempFactor(uint8_t maxTemp)
+{
+  if (maxTemp > 50)
+  {
+    tempFactor = 1 - ((float)(max((uint8_t) 20, maxTemp) - 50) / 20);
+  }
+  else
+  {
+    tempFactor = 1;
+  }
+}
+
+void handleTemp()
+{
+  uint8_t tR = 0; // tempRead(GPIO_TEMP_R);
+  uint8_t tG = 0; // tempRead(GPIO_TEMP_G);
+  uint8_t tB = tempRead(GPIO_TEMP_B);
+  uint8_t tD = tempRead(GPIO_TEMP_BOX);
+  uint8_t maxTemp = max(tR, max(tG, tB));
+  tempToFanSpeed(maxTemp);
+  tempToTempFactor(maxTemp);
+  displayTemp(tR, tG, tB, tD);
+}
+
+void handleFanSpeed()
+{
   ulong timeframe = millis() - fanTimer;
-  if (timeframe > 1000) {
-    uint16_t fanSpeed1 = ((double) fanCounter1 / timeframe) * 30000;
-    uint16_t fanSpeed2 = ((double) fanCounter2 / timeframe) * 30000;
+  if (timeframe > 1000)
+  {
+    uint16_t fanSpeed1 = ((double)fanCounter1 / timeframe) * 30000;
+    uint16_t fanSpeed2 = ((double)fanCounter2 / timeframe) * 30000;
     displayFanSpeed(fanSpeed1, fanSpeed2);
     fanCounter1 = 0;
     fanCounter2 = 0;
@@ -252,6 +318,7 @@ void loop()
   // put your main code here, to run repeatedly:
   handleTemp();
   handleFanSpeed();
+  writeToPwm();
   updateDisplay();
   artnet.read();
 }

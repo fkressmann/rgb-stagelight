@@ -73,9 +73,6 @@ void displayWiFi(String wifi, IPAddress ip) {
     displayChanged = true;
 }
 void displayRGBIntensity(int r, int g, int b) {
-    Serial.println(r);
-    Serial.println(g);
-    Serial.println(b);
     sprintf(intensity,"RGB  R%3d G%3d B%3d", r, g, b);
     Serial.println(intensity);
     displayChanged = true;
