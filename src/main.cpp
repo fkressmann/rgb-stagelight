@@ -243,12 +243,12 @@ void setup()
 
 uint8_t tempRead(uint8_t pin)
 {
-  uint16_t adc = 0;
-  for (int i = 0; i < 10; i++)
+  uint32_t adc = 0;
+  for (int i = 0; i < 100; i++)
   {
     adc += analogRead(pin);
   }
-  adc /= 10;
+  adc /= 100;
   double voltage = ((3.3 / 4096) * adc) + 0.155;
   double resistance = ((3.3 - voltage) * 10000) / voltage;
   uint8_t temp = round((1 / ((log(resistance / 10000) / 3977) + (1 / (25 + 273.15)))) - 273.15);
@@ -278,7 +278,7 @@ void tempToTempFactor(uint8_t maxTemp)
 {
   if (maxTemp > 50)
   {
-    tempFactor = 1 - ((float)(max((uint8_t) 20, maxTemp) - 50) / 20);
+    tempFactor = 1 - ((float)(max((uint8_t) 70, maxTemp) - 50) / 20);
   }
   else
   {
