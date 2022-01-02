@@ -1,9 +1,10 @@
+#include "display.h"
+#include "dmx.h"
+#include "ota.h"
 #include <Arduino.h>
+#include <ArtnetWifi.h>
 #include <ESPAsyncWebServer.h>
 #include <ESPAsync_WiFiManager.h>
-#include <ArtnetWifi.h>
-#include "ota.h"
-#include "display.h"
 
 #define GPIO_LED_R 12
 #define PWM_CHANNEL_R 0
@@ -44,6 +45,10 @@ uint16_t fanCounter1 = 0;
 uint16_t fanCounter2 = 0;
 ulong fanTimer = 0;
 
+ulong tempTimer = 0;
+
+boolean modeArtNet = true;
+
 AsyncWebServer webServer(80);
 DNSServer dnsServer;
 
@@ -65,13 +70,21 @@ const char index_html[] PROGMEM = R"rawliteral(
   <h2>Farben</h2>
   <form action="/color" method="post">
   <label for="color">Select color:</label>
-  <input type="color" id="color" name="color" value="#%color%"><br>
-  </form>
+  <input type="color" id="color" name="color" value="#%color%">
+  </form><hr>
   <form action="/text" method="post">
   <label for="t">Text to display:</label>
   <textarea name="t" rows="3" cols="30"></textarea>
   <input type="submit" value="Speichern">
-  </form>
+  </form><hr>
+  <form action="/mode" method="post">
+  <label for="mode">Mode:</label>
+  <select name="mode" id="mode">
+    <option value="art-net" %art-net-selected%>Art-Net</option>
+    <option value="dmx" %dmx-selected%>DMX</option>
+  </select>
+  <input type="submit" value="Speichern">
+  </form><hr>
 </body>
 <script>
     $(document).ready(function(e) {
@@ -87,24 +100,26 @@ const char index_html[] PROGMEM = R"rawliteral(
 </script></html>)rawliteral";
 
 // Replaces placeholder in HTML
-String processor(const String &var)
-{
-  if (var == "color")
-  {
+String processor(const String &var) {
+  if (var == "color") {
     char dataString[7] = {0};
     sprintf(dataString, "%02X%02X%02X", Rval, Gval, Bval);
     return String(dataString);
   }
+  if (var == "art-net-selected" && modeArtNet) {
+    return "selected";
+  }
+  if (var == "dmx-selected" && !modeArtNet) {
+    return "selected";
+  }
   return String();
 }
 
-uint8_t hexStrToInt(const char str[])
-{
+uint8_t hexStrToInt(const char str[]) {
   return (uint8_t)strtol(str, 0, 16);
 }
 
-void writeToPwm(uint8_t r, uint8_t g, uint8_t b)
-{
+void writeToPwm(uint8_t r, uint8_t g, uint8_t b) {
   // if (Rval == r && Gval == g && Bval == b) {
   //   return;
   // }
@@ -117,35 +132,29 @@ void writeToPwm(uint8_t r, uint8_t g, uint8_t b)
   displayRGBIntensity(Rval, Gval, Bval);
 }
 
-void writeToPwm()
-{
-  if (tempFactor == 1 && Rval == RvalActual && Gval == GvalActual && Bval == BvalActual)
-  {
+void writeToPwm() {
+  if (tempFactor == 1 && Rval == RvalActual && Gval == GvalActual && Bval == BvalActual) {
     return;
   }
   RvalActual = tempFactor * Rval;
   GvalActual = tempFactor * Gval;
   BvalActual = tempFactor * Bval;
-  Serial.println(tempFactor);
   ledcWrite(PWM_CHANNEL_R, RvalActual);
   ledcWrite(PWM_CHANNEL_G, GvalActual);
   ledcWrite(PWM_CHANNEL_B, BvalActual);
   displayRGBIntensity(RvalActual, GvalActual, BvalActual);
 }
 
-void decodeAndUpdateColor(String colorString)
-{
+void decodeAndUpdateColor(String colorString) {
   Rval = hexStrToInt(colorString.substring(1, 3).c_str());
   Gval = hexStrToInt(colorString.substring(3, 5).c_str());
   Bval = hexStrToInt(colorString.substring(5).c_str());
 }
 
-void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t *data)
-{
-  if (universe == 0)
-  {
-    if (length > 2)
-    {
+void onArtNetFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t *data) {
+  if (universe == 0) {
+    sendDmxFrame(length, data);
+    if (length > 2) {
       Rval = data[0];
       Gval = data[1];
       Bval = data[2];
@@ -153,18 +162,26 @@ void onDmxFrame(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t *d
   }
 }
 
-void IRAM_ATTR isrFan1()
-{
+void onDmxFrame(uint16_t length, uint8_t *data) {
+  // First Byte is DMX packet type, 0 is dimmer
+  if (data[0] == 0 && length > 3) {
+    Rval = data[1];
+    Gval = data[2];
+    Bval = data[3];
+    memcpy(artnet.artnetPacket, data + 1, length - 1);
+    artnet.write();
+  }
+}
+
+void IRAM_ATTR isrFan1() {
   fanCounter1 += 1;
 }
 
-void IRAM_ATTR isrFan2()
-{
+void IRAM_ATTR isrFan2() {
   fanCounter2 += 1;
 }
 
-void setup()
-{
+void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
   while (!Serial)
@@ -195,57 +212,64 @@ void setup()
   Serial.println(ESP_ASYNC_WIFIMANAGER_VERSION);
   ESPAsync_WiFiManager ESPAsync_wifiManager(&webServer, &dnsServer, "AutoConnectAP");
   ESPAsync_wifiManager.autoConnect("AutoConnectAP");
-  if (WiFi.status() == WL_CONNECTED)
-  {
+  if (WiFi.status() == WL_CONNECTED) {
     Serial.print(F("Connected. Local IP: "));
     Serial.println(WiFi.localIP());
     displayWiFi(WiFi.SSID(), WiFi.localIP());
-  }
-  else
-  {
+  } else {
     Serial.println(ESPAsync_wifiManager.getStatus(WiFi.status()));
   }
 
   setupOta();
 
   artnet.begin();
-  artnet.setArtDmxCallback(onDmxFrame);
+  artnet.setArtDmxCallback(onArtNetFrame);
+  setupDmxDefaultTx(onDmxFrame);
+  displayInfo("Mode Art-Net -> DMX");
 
-  // Send web page to client
-  webServer.on("/", HTTP_GET, [](AsyncWebServerRequest *request)
-               { request->send_P(200, "text/html", index_html, processor); });
-  // Receive an HTTP GET request at <ESP_IP>/get?threshold_input=<inputMessage>&enable_arm_input=<inputMessage2>
-  webServer.on("/color", HTTP_POST, [](AsyncWebServerRequest *request)
-               {
-    // GET threshold_input value on <ESP_IP>/get?threshold_input=<inputMessage>
-    Serial.println("Handling request");
+  webServer.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send_P(200, "text/html", index_html, processor);
+  });
+
+  webServer.on("/color", HTTP_POST, [](AsyncWebServerRequest *request) {
     if (request->hasParam("color", true)) {
-      Serial.println("Found color in request:");
       String value = request->getParam("color", true)->value();
       decodeAndUpdateColor(value);
     }
-    request->send(200); });
+    request->send(200);
+  });
 
-  webServer.on("/text", HTTP_POST, [](AsyncWebServerRequest *request)
-               {
-    // GET threshold_input value on <ESP_IP>/get?threshold_input=<inputMessage>
-    Serial.println("Handling request");
+  webServer.on("/text", HTTP_POST, [](AsyncWebServerRequest *request) {
     if (request->hasParam("t", true)) {
       String value = request->getParam("t", true)->value();
-      Serial.println("Received Text:");
-      Serial.println(value);
       displayInfo(value);
     }
-    request->redirect("/"); });
+    request->redirect("/");
+  });
+
+  webServer.on("/mode", HTTP_POST, [](AsyncWebServerRequest *request) {
+    if (request->hasParam("mode", true)) {
+      String value = request->getParam("mode", true)->value();
+      if (value.equals("art-net")) {
+        artnet.begin();
+        dmxSwitchToTx();
+        displayInfo("Mode Art-Net -> DMX");
+        modeArtNet = true;
+      } else if (value.equals("dmx")) {
+        dmxSwitchToRx();
+        displayInfo("Mode DMX -> Art-Net");
+        modeArtNet = false;
+      }
+    }
+    request->redirect("/");
+  });
 
   webServer.begin();
 }
 
-uint8_t tempRead(uint8_t pin)
-{
+uint8_t tempRead(uint8_t pin) {
   uint32_t adc = 0;
-  for (int i = 0; i < 100; i++)
-  {
+  for (int i = 0; i < 100; i++) {
     adc += analogRead(pin);
   }
   adc /= 100;
@@ -255,54 +279,45 @@ uint8_t tempRead(uint8_t pin)
   return temp;
 }
 
-void setFanSpeed(uint8_t percent)
-{
+void setFanSpeed(uint8_t percent) {
   percent = min((uint8_t)100, percent);
   percent = max((uint8_t)0, percent);
   ledcWrite(PWM_CHANNEL_FAN_OUT, 255 - (percent * 2.55));
 }
 
-void tempToFanSpeed(uint8_t maxTemp)
-{
-  if (maxTemp > 30)
-  {
+void tempToFanSpeed(uint8_t maxTemp) {
+  if (maxTemp > 30) {
     setFanSpeed((maxTemp - 30) * 5);
-  }
-  else
-  {
+  } else {
     setFanSpeed(0);
   }
 }
 
-void tempToTempFactor(uint8_t maxTemp)
-{
-  if (maxTemp > 50)
-  {
-    tempFactor = 1 - ((float)(max((uint8_t) 70, maxTemp) - 50) / 20);
-  }
-  else
-  {
+void tempToTempFactor(uint8_t maxTemp) {
+  if (maxTemp > 50) {
+    tempFactor = 1 - ((float)(max((uint8_t)70, maxTemp) - 50) / 20);
+  } else {
     tempFactor = 1;
   }
 }
 
-void handleTemp()
-{
-  uint8_t tR = 0; // tempRead(GPIO_TEMP_R);
-  uint8_t tG = 0; // tempRead(GPIO_TEMP_G);
-  uint8_t tB = tempRead(GPIO_TEMP_B);
-  uint8_t tD = tempRead(GPIO_TEMP_BOX);
-  uint8_t maxTemp = max(tR, max(tG, tB));
-  tempToFanSpeed(maxTemp);
-  tempToTempFactor(maxTemp);
-  displayTemp(tR, tG, tB, tD);
+void handleTemp() {
+  ulong timeframe = millis() - tempTimer;
+  if (timeframe > 1000) {
+    uint8_t tR = 0; // tempRead(GPIO_TEMP_R);
+    uint8_t tG = 0; // tempRead(GPIO_TEMP_G);
+    uint8_t tB = tempRead(GPIO_TEMP_B);
+    uint8_t tD = tempRead(GPIO_TEMP_BOX);
+    uint8_t maxTemp = max(tR, max(tG, tB));
+    tempToFanSpeed(maxTemp);
+    tempToTempFactor(maxTemp);
+    displayTemp(tR, tG, tB, tD);
+  }
 }
 
-void handleFanSpeed()
-{
+void readFanSpeed() {
   ulong timeframe = millis() - fanTimer;
-  if (timeframe > 1000)
-  {
+  if (timeframe > 1000) {
     uint16_t fanSpeed1 = ((double)fanCounter1 / timeframe) * 30000;
     uint16_t fanSpeed2 = ((double)fanCounter2 / timeframe) * 30000;
     displayFanSpeed(fanSpeed1, fanSpeed2);
@@ -312,13 +327,19 @@ void handleFanSpeed()
   }
 }
 
-void loop()
-{
+void loop() {
   ArduinoOTA.handle();
-  // put your main code here, to run repeatedly:
+
   handleTemp();
-  handleFanSpeed();
+  readFanSpeed();
+
+  if (modeArtNet) {
+    // Serial.println("Handling Art-Net RX");
+    artnet.read();
+  } else {
+    // Serial.println("Handling DMX RX");
+    handleDmxRx();
+  }
   writeToPwm();
   updateDisplay();
-  artnet.read();
 }
