@@ -13,6 +13,7 @@
 #define GPIO_LED_B 14
 #define PWM_CHANNEL_B 2
 
+#define GPIO_CASE_FAN 5
 #define GPIO_FAN_OUT 27
 #define PWM_CHANNEL_FAN_OUT 3
 #define GPIO_FAN_1_IN 25
@@ -197,6 +198,9 @@ void setup() {
   ledcSetup(PWM_CHANNEL_B, 1000, 8);
   ledcAttachPin(GPIO_LED_B, PWM_CHANNEL_B);
 
+  pinMode(GPIO_CASE_FAN, OUTPUT);
+  digitalWrite(GPIO_CASE_FAN, LOW);
+
   ledcSetup(PWM_CHANNEL_FAN_OUT, 1000, 8);
   ledcAttachPin(GPIO_FAN_OUT, PWM_CHANNEL_FAN_OUT);
 
@@ -293,6 +297,7 @@ void tempToFanSpeed(uint8_t maxTemp) {
   }
 }
 
+// ToDo: Fix overshoot
 void tempToTempFactor(uint8_t maxTemp) {
   if (maxTemp > 50) {
     tempFactor = 1 - ((float)(max((uint8_t)70, maxTemp) - 50) / 20);
@@ -303,21 +308,27 @@ void tempToTempFactor(uint8_t maxTemp) {
 
 void handleTemp() {
   ulong timeframe = millis() - tempTimer;
-  if (timeframe > 1000) {
+  if (timeframe > 1234) {
     uint8_t tR = 0; // tempRead(GPIO_TEMP_R);
     uint8_t tG = 0; // tempRead(GPIO_TEMP_G);
     uint8_t tB = tempRead(GPIO_TEMP_B);
-    uint8_t tD = tempRead(GPIO_TEMP_BOX);
-    uint8_t maxTemp = max(tR, max(tG, tB));
-    tempToFanSpeed(maxTemp);
-    tempToTempFactor(maxTemp);
-    displayTemp(tR, tG, tB, tD);
+    uint8_t tCase = tempRead(GPIO_TEMP_BOX);
+    if (tCase > 35) {
+      digitalWrite(GPIO_CASE_FAN, HIGH);
+    } else {
+      digitalWrite(GPIO_CASE_FAN, LOW);
+    }
+    uint8_t maxLedTemp = max(tR, max(tG, tB));
+    tempToFanSpeed(maxLedTemp);
+    tempToTempFactor(maxLedTemp);
+    displayTemp(tR, tG, tB, tCase);
+    tempTimer = millis();
   }
 }
 
 void readFanSpeed() {
   ulong timeframe = millis() - fanTimer;
-  if (timeframe > 1000) {
+  if (timeframe > 999) {
     uint16_t fanSpeed1 = ((double)fanCounter1 / timeframe) * 30000;
     uint16_t fanSpeed2 = ((double)fanCounter2 / timeframe) * 30000;
     displayFanSpeed(fanSpeed1, fanSpeed2);
@@ -334,10 +345,8 @@ void loop() {
   readFanSpeed();
 
   if (modeArtNet) {
-    // Serial.println("Handling Art-Net RX");
     artnet.read();
   } else {
-    // Serial.println("Handling DMX RX");
     handleDmxRx();
   }
   writeToPwm();
