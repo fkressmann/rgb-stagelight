@@ -6,23 +6,23 @@
 #include <ESPAsyncWebServer.h>
 #include <ESPAsync_WiFiManager.h>
 
-#define GPIO_LED_R 12
+#define GPIO_LED_R 14
 #define PWM_CHANNEL_R 0
-#define GPIO_LED_G 13
+#define GPIO_LED_G 12
 #define PWM_CHANNEL_G 1
-#define GPIO_LED_B 14
+#define GPIO_LED_B 13
 #define PWM_CHANNEL_B 2
 
 #define GPIO_CASE_FAN 5
-#define GPIO_FAN_OUT 27
+#define GPIO_FAN_OUT 25
 #define PWM_CHANNEL_FAN_OUT 3
-#define GPIO_FAN_1_IN 25
-#define GPIO_FAN_2_IN 26
+#define GPIO_FAN_1_IN 26
+#define GPIO_FAN_2_IN 27
 
-#define GPIO_TEMP_R 32
-#define GPIO_TEMP_G 33
-#define GPIO_TEMP_B 34
-#define GPIO_TEMP_BOX 35
+#define GPIO_TEMP_R 35
+#define GPIO_TEMP_G 32
+#define GPIO_TEMP_B 33
+#define GPIO_TEMP_BOX 34
 
 #define GPIO_SCL 22
 #define GPIO_SDA 21
@@ -35,7 +35,7 @@ uint8_t RvalActual = 0;
 uint8_t GvalActual = 0;
 uint8_t BvalActual = 0;
 
-float tempFactor = 1;
+double tempFactor = 1;
 
 uint8_t Rtemp = 0;
 uint8_t Gtemp = 0;
@@ -300,18 +300,18 @@ void tempToFanSpeed(uint8_t maxTemp) {
 // ToDo: Fix overshoot
 void tempToTempFactor(uint8_t maxTemp) {
   if (maxTemp > 50) {
-    tempFactor = 1 - ((float)(max((uint8_t)70, maxTemp) - 50) / 20);
+    tempFactor = 1.0 - ((double)(min((uint8_t)70, maxTemp) - 50) / 20);
   } else {
-    tempFactor = 1;
+    tempFactor = 1.0;
   }
 }
 
 void handleTemp() {
   ulong timeframe = millis() - tempTimer;
   if (timeframe > 1234) {
-    uint8_t tR = 0; // tempRead(GPIO_TEMP_R);
+    uint8_t tR = tempRead(GPIO_TEMP_R);
     uint8_t tG = 0; // tempRead(GPIO_TEMP_G);
-    uint8_t tB = tempRead(GPIO_TEMP_B);
+    uint8_t tB = 0; // tempRead(GPIO_TEMP_B);
     uint8_t tCase = tempRead(GPIO_TEMP_BOX);
     if (tCase > 35) {
       digitalWrite(GPIO_CASE_FAN, HIGH);

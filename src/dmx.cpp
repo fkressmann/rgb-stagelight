@@ -49,6 +49,7 @@ void dmxSwitchToTx() {
   txActive = true;
 }
 
+// Handle incoming DMX packet and forward to callback
 void handleDmxRxInternal() {
   dmx_event_t packet;
 
