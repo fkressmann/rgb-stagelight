@@ -120,19 +120,6 @@ uint8_t hexStrToInt(const char str[]) {
   return (uint8_t)strtol(str, 0, 16);
 }
 
-void writeToPwm(uint8_t r, uint8_t g, uint8_t b) {
-  // if (Rval == r && Gval == g && Bval == b) {
-  //   return;
-  // }
-  Rval = tempFactor * r;
-  Bval = tempFactor * g;
-  Gval = tempFactor * b;
-  ledcWrite(PWM_CHANNEL_R, Rval);
-  ledcWrite(PWM_CHANNEL_G, Gval);
-  ledcWrite(PWM_CHANNEL_B, Bval);
-  displayRGBIntensity(Rval, Gval, Bval);
-}
-
 void writeToPwm() {
   if (tempFactor == 1 && Rval == RvalActual && Gval == GvalActual && Bval == BvalActual) {
     return;
@@ -140,9 +127,9 @@ void writeToPwm() {
   RvalActual = tempFactor * Rval;
   GvalActual = tempFactor * Gval;
   BvalActual = tempFactor * Bval;
-  ledcWrite(PWM_CHANNEL_R, RvalActual);
-  ledcWrite(PWM_CHANNEL_G, GvalActual);
-  ledcWrite(PWM_CHANNEL_B, BvalActual);
+  ledcWrite(PWM_CHANNEL_R, 255 - RvalActual);
+  ledcWrite(PWM_CHANNEL_G, 255 - GvalActual);
+  ledcWrite(PWM_CHANNEL_B, 255 - BvalActual);
   displayRGBIntensity(RvalActual, GvalActual, BvalActual);
 }
 
@@ -191,12 +178,15 @@ void setup() {
 
   ledcSetup(PWM_CHANNEL_R, 1000, 8);
   ledcAttachPin(GPIO_LED_R, PWM_CHANNEL_R);
+  ledcWrite(PWM_CHANNEL_R, 255);
 
   ledcSetup(PWM_CHANNEL_G, 1000, 8);
   ledcAttachPin(GPIO_LED_G, PWM_CHANNEL_G);
+  ledcWrite(PWM_CHANNEL_G, 255);
 
   ledcSetup(PWM_CHANNEL_B, 1000, 8);
   ledcAttachPin(GPIO_LED_B, PWM_CHANNEL_B);
+  ledcWrite(PWM_CHANNEL_B, 255);
 
   pinMode(GPIO_CASE_FAN, OUTPUT);
   digitalWrite(GPIO_CASE_FAN, LOW);
@@ -310,8 +300,8 @@ void handleTemp() {
   ulong timeframe = millis() - tempTimer;
   if (timeframe > 1234) {
     uint8_t tR = tempRead(GPIO_TEMP_R);
-    uint8_t tG = 0; // tempRead(GPIO_TEMP_G);
-    uint8_t tB = 0; // tempRead(GPIO_TEMP_B);
+    uint8_t tG = tempRead(GPIO_TEMP_G);
+    uint8_t tB = tempRead(GPIO_TEMP_B);
     uint8_t tCase = tempRead(GPIO_TEMP_BOX);
     if (tCase > 35) {
       digitalWrite(GPIO_CASE_FAN, HIGH);
