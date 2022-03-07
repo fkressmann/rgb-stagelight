@@ -9,7 +9,7 @@ mounted on three sides of a prism-like mirror case which redirected the light al
 using color-spectrum and angle-of-irradiation dependent mirrors. No idea if I explained this
 correctly, I not a physicist :D Anyway, impressive engineering!
 
-![led chip, mirrors and heatsink](img/led.jpg)
+![led chip, mirrors and heatsink](resources/led.jpg)
 
 ### 300V? What?
 
@@ -37,9 +37,9 @@ translate Art-Net to DMX and vice versa. Always taking ch 1-3 as RGB input.
 
 ### Electronics
 
-In the end, it looks like this:
+In the end, it looks like this: (Fritzing file included in `/resources`)
 
-![driver](img/driver.jpg)
+![driver](resources/driver.jpg)
 
 ### Outlook
 
